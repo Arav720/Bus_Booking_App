@@ -40,3 +40,21 @@ export const isGuestSession = (): boolean => {
 export const clearGuestSession = () => {
   storage.delete('isGuest');
 };
+
+// Guest Info Storage
+export const setGuestInfo = (name: string, email: string) => {
+  storage.set('guestName', name);
+  storage.set('guestEmail', email);
+};
+
+export const getGuestInfo = (): { name?: string; email?: string } => {
+  return {
+    name: storage.getString('guestName'),
+    email: storage.getString('guestEmail'),
+  };
+};
+
+export const clearGuestInfo = () => {
+  storage.delete('guestName');
+  storage.delete('guestEmail');
+};

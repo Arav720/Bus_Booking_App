@@ -15,36 +15,45 @@ const SplashScreen = () => {
     const accessToken = await getAccessToken();
     const refreshToken = await getRefreshToken();
 
-    if (isGuest && accessToken && refreshToken) {
+    // If user is guest, go directly to home
+    if (isGuest) {
       resetAndNavigate('HomeScreen');
       return;
     }
 
+    // If user has valid tokens, check and refresh if needed
     if (accessToken && refreshToken) {
-      const decodedAccessToken = jwtDecode<DecodedToken>(accessToken);
-      const decodedRefreshToken = jwtDecode<DecodedToken>(refreshToken);
+      try {
+        const decodedAccessToken = jwtDecode<DecodedToken>(accessToken);
+        const decodedRefreshToken = jwtDecode<DecodedToken>(refreshToken);
 
-      const currentTime = Date.now() / 1000;
+        const currentTime = Date.now() / 1000;
 
-      if (decodedRefreshToken?.exp < currentTime) {
-        resetAndNavigate('LoginScreen');
-        Alert.alert('Session Expired', 'Please login again to continue.');
-        return;
-      }
-
-      if (decodedAccessToken?.exp < currentTime) {
-        const refreshed = await refresh_token();
-        if (!refreshed) {
-          Alert.alert('Error', 'Token refresh failed. Please login again.');
+        if (decodedRefreshToken?.exp < currentTime) {
           resetAndNavigate('LoginScreen');
+          Alert.alert('Session Expired', 'Please login again to continue.');
           return;
         }
-      }
 
-      resetAndNavigate('HomeScreen');
-      return;
+        if (decodedAccessToken?.exp < currentTime) {
+          const refreshed = await refresh_token();
+          if (!refreshed) {
+            Alert.alert('Error', 'Token refresh failed. Please login again.');
+            resetAndNavigate('LoginScreen');
+            return;
+          }
+        }
+
+        resetAndNavigate('HomeScreen');
+        return;
+      } catch (error) {
+        console.error('Token validation error:', error);
+        resetAndNavigate('LoginScreen');
+        return;
+      }
     }
 
+    // No valid session found, go to login
     resetAndNavigate('LoginScreen');
   };
 

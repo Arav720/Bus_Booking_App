@@ -1,4 +1,5 @@
 import createApiClient from '../apiClient';
+import { isGuestSession } from '../storage';
 
 // Fetch buses based on route and date
 export const fetchBuses = async (from: string, to: string, date: string) => {
@@ -45,12 +46,18 @@ export const bookTicket = async ({
     const api = await createApiClient();
     console.log("🔌 API client initialized");
 
+    // Check if user is guest and validate guest info
+    const isGuest = isGuestSession();
+    
+    if (isGuest && (!guestName || !guestEmail)) {
+      throw new Error('Guest name and email are required for guest bookings');
+    }
+
     const payload = {
       busId,
       date,
       seatNumbers,
-      guestName,
-      guestEmail,
+      ...(isGuest && { guestName, guestEmail }), // Only include guest info if user is guest
     };
 
     console.log("📤 Sending POST request to /ticket/book with payload:");
@@ -69,10 +76,9 @@ export const bookTicket = async ({
     } else {
       console.error("⚠️ Unexpected error:", error);
     }
-    return null;
+    throw error; // Re-throw to handle in component
   }
 };
-
 
 // Fetch all tickets for the logged-in user
 export const fetchUserTickets = async () => {

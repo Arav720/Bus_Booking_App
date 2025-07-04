@@ -6,8 +6,9 @@ import {
   ActivityIndicator,
   ScrollView,
   SafeAreaView,
-
   TouchableOpacity,
+  TextInput,
+  Modal,
 } from 'react-native';
 import { useFocusEffect, useRoute } from '@react-navigation/native';
 import { useQuery, useMutation } from '@tanstack/react-query';
@@ -18,12 +19,29 @@ import TicketModal from '../components/ui/TicketModal';
 import PaymentButton from '../components/ui/PaymentButton';
 import { StarIcon } from 'react-native-heroicons/solid';
 import Seat from '../components/ui/Seat';
+import { isGuestSession, getGuestInfo, setGuestInfo } from '../service/storage';
 
 const SeatSelectionScreen = () => {
   const [ticketVisible, setTicketVisible] = useState(false);
   const [selectedSeats, setSelectedSeats] = useState<number[]>([]);
+  const [showGuestModal, setShowGuestModal] = useState(false);
+  const [guestName, setGuestName] = useState('');
+  const [guestEmail, setGuestEmail] = useState('');
+  const [bookingData, setBookingData] = useState<any>(null);
+  
   const route = useRoute();
   const { busId } = route.params as { busId: string };
+
+  const isGuest = isGuestSession();
+
+  // Load guest info if available
+  React.useEffect(() => {
+    if (isGuest) {
+      const guestInfo = getGuestInfo();
+      if (guestInfo.name) setGuestName(guestInfo.name);
+      if (guestInfo.email) setGuestEmail(guestInfo.email);
+    }
+  }, [isGuest]);
 
   const {
     data: busInfo,
@@ -46,14 +64,17 @@ const SeatSelectionScreen = () => {
       busId: string;
       date: string;
       seatNumbers: number[];
+      guestName?: string;
+      guestEmail?: string;
     }) => bookTicket(ticketData),
     onSuccess: data => {
       console.log('Ticket booked successfully:', data);
+      setBookingData(data);
       setTicketVisible(true);
     },
     onError: error => {
-      console.error('Error booking ticket:156', error);
-      Alert.alert('Failed to book ticket. Please try again.');
+      console.error('Error booking ticket:', error);
+      Alert.alert('Booking Failed', 'Failed to book ticket. Please try again.');
     },
   });
 
@@ -67,20 +88,48 @@ const SeatSelectionScreen = () => {
 
   const handleOnPay = () => {
     if (selectedSeats.length === 0) {
-      Alert.alert('Please select at least one seat.');
+      Alert.alert('No Seats Selected', 'Please select at least one seat.');
       return;
     }
 
     if (!busInfo?.departureTime) {
-      Alert.alert('Bus information not loaded.');
+      Alert.alert('Error', 'Bus information not loaded.');
       return;
     }
 
-    bookTicketMutation.mutate({
+    // If guest, show modal to collect info
+    if (isGuest) {
+      setShowGuestModal(true);
+      return;
+    }
+
+    // For logged-in users, proceed directly
+    proceedWithBooking();
+  };
+
+  const proceedWithBooking = () => {
+    if (isGuest && (!guestName.trim() || !guestEmail.trim())) {
+      Alert.alert('Missing Information', 'Please provide your name and email.');
+      return;
+    }
+
+    // Save guest info for future use
+    if (isGuest) {
+      setGuestInfo(guestName.trim(), guestEmail.trim());
+    }
+
+    const ticketData = {
       busId,
       date: new Date(busInfo?.departureTime).toISOString(),
       seatNumbers: selectedSeats,
-    });
+      ...(isGuest && {
+        guestName: guestName.trim(),
+        guestEmail: guestEmail.trim(),
+      }),
+    };
+
+    bookTicketMutation.mutate(ticketData);
+    setShowGuestModal(false);
   };
 
   if (isLoading) {
@@ -95,11 +144,10 @@ const SeatSelectionScreen = () => {
   if (isError || !busInfo) {
     return (
       <View className="flex-1 items-center justify-center">
-        <Text className="text-red-500">Error loading bus details.
-          <TouchableOpacity onPress={()=>goBack()}>
-            <Text className="text-blue-500">Go Back</Text>
-          </TouchableOpacity>
-        </Text>
+        <Text className="text-red-500">Error loading bus details.</Text>
+        <TouchableOpacity onPress={() => goBack()}>
+          <Text className="text-blue-500 mt-2">Go Back</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -164,12 +212,12 @@ const SeatSelectionScreen = () => {
             ))}
           </View>
         </View>
-       <Seat
-        selectedSeats={selectedSeats}
-        seats={busInfo?.seats}
-        onSeatSelect={handleSeatSelection}
+
+        <Seat
+          selectedSeats={selectedSeats}
+          seats={busInfo?.seats}
+          onSeatSelect={handleSeatSelection}
         />
-        {/* Seat map should be rendered here */}
       </ScrollView>
 
       <PaymentButton
@@ -178,7 +226,54 @@ const SeatSelectionScreen = () => {
         onPay={handleOnPay}
       />
 
-      {ticketVisible && (
+      {/* Guest Info Modal */}
+      <Modal visible={showGuestModal} transparent animationType="slide">
+        <View className="flex-1 justify-center items-center bg-black/50">
+          <View className="bg-white p-6 rounded-lg mx-4 w-full max-w-sm">
+            <Text className="text-xl font-bold mb-4 text-center">Guest Information</Text>
+            
+            <Text className="text-sm text-gray-600 mb-2">Full Name</Text>
+            <TextInput
+              value={guestName}
+              onChangeText={setGuestName}
+              placeholder="Enter your full name"
+              className="border border-gray-300 rounded-lg p-3 mb-4"
+            />
+            
+            <Text className="text-sm text-gray-600 mb-2">Email Address</Text>
+            <TextInput
+              value={guestEmail}
+              onChangeText={setGuestEmail}
+              placeholder="Enter your email"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              className="border border-gray-300 rounded-lg p-3 mb-6"
+            />
+            
+            <View className="flex-row gap-3">
+              <TouchableOpacity
+                onPress={() => setShowGuestModal(false)}
+                className="flex-1 bg-gray-300 p-3 rounded-lg"
+              >
+                <Text className="text-center font-bold">Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                onPress={proceedWithBooking}
+                className="flex-1 bg-red-500 p-3 rounded-lg"
+                disabled={!guestName.trim() || !guestEmail.trim()}
+              >
+                <Text className="text-center font-bold text-white">
+                  Book Ticket
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Ticket Modal */}
+      {ticketVisible && bookingData && (
         <TicketModal
           visible={ticketVisible}
           bookingInfo={{
@@ -195,10 +290,10 @@ const SeatSelectionScreen = () => {
             date: new Date(busInfo.departureTime).toDateString(),
             company: busInfo.company,
             busType: busInfo.busType,
-            seats: bookTicketMutation.data?.seatNumbers || [],
-            ticketNumber: bookTicketMutation.data?._id || 'xxxXXXXXXX',
-            pnr: bookTicketMutation.data?.pnr || 'xxxxxxxxxxx',
-            fare: `₹${busInfo.price * selectedSeats.length}`,
+            seats: bookingData.seatNumbers || selectedSeats,
+            ticketNumber: bookingData._id || 'xxxXXXXXXX',
+            pnr: bookingData.pnr || 'xxxxxxxxxxx',
+            fare: bookingData.total_fare || busInfo.price * selectedSeats.length,
           }}
           onClose={() => {
             setTicketVisible(false);
